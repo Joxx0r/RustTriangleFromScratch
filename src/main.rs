@@ -16,6 +16,20 @@ type UINT_PTR = usize;
 type WCHAR = wchar_t;
 type wchar_t = u16;
 type WPARAM = UINT_PTR;
+type HMODULE = HANDLE;
+
+
+macro_rules! unsafe_impl_default_zeroed {
+    ($t:ty) => {
+      impl Default for $t {
+        #[inline]
+        #[must_use]
+        fn default() -> Self {
+          unsafe { core::mem::zeroed() }
+        }
+      }
+    };
+  }
 
 
 type WNDPROC = Option<
@@ -24,8 +38,15 @@ type WNDPROC = Option<
     uMsg: UINT,
     wParam: WPARAM,
     lParam: LPARAM,
-  ) -> LRESULT,
+  ) -> LRESULT
 >;
+
+unsafe extern "system" fn dummy_window_procedure(
+    hwnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM,
+  ) -> LRESULT {
+    unimplemented!()
+  }
+
 
 #[repr(C)]
 pub struct WNDCLASSW {
@@ -40,7 +61,19 @@ pub struct WNDCLASSW {
   lpszMenuName: LPCWSTR,
   lpszClassName: LPCWSTR,
 }
+unsafe_impl_default_zeroed!(WNDCLASSW);
+
+#[link(name = "Kernel32")]
+extern "system" {
+  /// [`GetModuleHandleW`](https://docs.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandlew)
+  pub fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
+}
 
 fn main() {
-    println!("Hello, world!");
+
+    let hInstance = unsafe { GetModuleHandleW(core::ptr::null()) };
+    let mut wc:WNDCLASSW = WNDCLASSW::default();
+    wc.lpfnWndProc = Some(dummy_window_procedure);
+    wc.hInstance = todo!();
+    wc.lpszClassName = todo!();
 }
