@@ -26,6 +26,15 @@ type ATOM = WORD;
 type HMENU = HANDLE;
 type LPVOID = *mut core::ffi::c_void;
 type BOOL = c_int;
+type LONG = c_long;
+type c_long = i32;
+type LPMSG = *mut MSG;
+
+
+const WINDOW_HEIGHT:f32  = 1024.0;
+const WINDOW_WIDTH:f32  = 1024.0;
+const WINDOW_START_POS_X:f32  = 0.0;
+const WINDOW_START_POS_Y:f32  = 0.0;
 
 /*
  * Window Styles
@@ -75,6 +84,9 @@ const WS_OVERLAPPEDWINDOW:u32 =
 const CW_USEDEFAULT:c_int   = 0x8000000 as c_int;
 const SW_SHOW: c_int = 5;
 
+pub const WM_CLOSE: u32 = 0x0010;
+pub const WM_DESTROY: u32 = 0x0002;
+
 macro_rules! unsafe_impl_default_zeroed {
     ($t:ty) => {
       impl Default for $t {
@@ -88,6 +100,13 @@ macro_rules! unsafe_impl_default_zeroed {
   }
 
 
+#[repr(C)]
+pub struct POINT {
+  x: LONG,
+  y: LONG,
+}
+unsafe_impl_default_zeroed!(POINT);
+
 type WNDPROC = Option<
   unsafe extern "system" fn(
     hwnd: HWND,
@@ -97,11 +116,14 @@ type WNDPROC = Option<
   ) -> LRESULT
 >;
 
-unsafe extern "system" fn dummy_window_procedure(
-    hwnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM,
-  ) -> LRESULT {
-    unimplemented!()
+pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+  match Msg {
+    WM_CLOSE =>  drop(DestroyWindow(hWnd)),
+    WM_DESTROY => PostQuitMessage(0),
+    _ => return DefWindowProcW(hWnd, Msg, wParam, lParam),
   }
+  0
+}
 
 
 #[repr(C)]
@@ -119,6 +141,18 @@ pub struct WNDCLASSW {
 }
 unsafe_impl_default_zeroed!(WNDCLASSW);
 
+#[repr(C)]
+pub struct MSG {
+  hwnd: HWND,
+  message: UINT,
+  wParam: WPARAM,
+  lParam: LPARAM,
+  time: DWORD,
+  pt: POINT,
+  lPrivate: DWORD,
+}
+unsafe_impl_default_zeroed!(MSG);
+
 #[link(name = "Kernel32")]
 extern "system" {
   /// [`GetModuleHandleW`](https://docs.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandlew)
@@ -134,6 +168,13 @@ extern "system" {
   pub fn ShowWindow(hWnd:HWND, nCmdShow:c_int) -> BOOL;
   /// [`DefWindowProcW`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-defwindowprocw)
   pub fn DefWindowProcW( hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM,) -> LRESULT;
+  /// [`GetMessageW`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessagew)
+  pub fn GetMessageW(lpMsg: LPMSG, hWnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT,) -> BOOL;
+  pub fn TranslateMessage(lpMsg: *const MSG) -> BOOL;
+  pub fn DispatchMessageW(lpMsg: *const MSG) -> LRESULT;
+
+  pub fn DestroyWindow(hWnd: HWND) -> BOOL;
+  pub fn PostQuitMessage(nExitCode: c_int);
 }
 
 pub fn wide_null(string:&str ) -> Vec<u16> {
@@ -148,7 +189,7 @@ fn main() {
     let window_name = wide_null("Some Window Name");
 
     let mut wc:WNDCLASSW = WNDCLASSW::default();
-    wc.lpfnWndProc = Some(dummy_window_procedure);
+    wc.lpfnWndProc = Some(window_procedure);
     wc.hInstance = hInstance;
     wc.lpszClassName = window_class_name.as_ptr();
     let return_result:ATOM= unsafe { RegisterClassW(&wc) } ;
@@ -163,10 +204,10 @@ fn main() {
           window_class_name.as_ptr(), 
           window_name.as_ptr(), 
           WS_OVERLAPPEDWINDOW,
-          CW_USEDEFAULT,
-          CW_USEDEFAULT,
-          CW_USEDEFAULT,
-          CW_USEDEFAULT,
+          WINDOW_START_POS_X as i32,
+          WINDOW_START_POS_Y as i32,
+          WINDOW_WIDTH as i32,
+          WINDOW_HEIGHT as i32,
           null_mut(),
           null_mut(),
           hInstance,
@@ -179,4 +220,19 @@ fn main() {
 
     let _previously_visible = unsafe { ShowWindow(hwnd, SW_SHOW) };
 
+    let mut msg = MSG::default();
+    loop {
+      let message_return = unsafe { GetMessageW(&mut msg, null_mut(), 0, 0) };
+      if message_return == 0 {
+        break;
+      } else if message_return == -1 {
+        let last_error = unsafe { GetLastError() };
+        panic!("Error with `GetMessageW`, error code: {}", last_error);
+      } else {
+        unsafe {
+          TranslateMessage(&msg);
+          DispatchMessageW(&msg);
+        }
+      }
+    }
 }
