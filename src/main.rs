@@ -10,14 +10,14 @@ use RustTriangleFromScratch::win32::*;
 
 pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
   match Msg {
-    WM_CLOSE =>  drop(DestroyWindow(hWnd)),
-    WM_DESTROY => {
+    self::WM_CLOSE =>  drop(DestroyWindow(hWnd)),
+    self::WM_DESTROY => {
       let ptr = GetWindowLongPtrW(hWnd, GWLP_USERDATA) as *mut i32;
       Box::from_raw(ptr);
       println!("Cleaned up the box.");
       PostQuitMessage(0);
     }
-    WM_PAINT => {
+    self::WM_PAINT => {
       let ptr = GetWindowLongPtrW(hWnd, GWLP_USERDATA) as *mut i32;
       println!("Current ptr: {}", *ptr);
       *ptr += 1;
@@ -26,7 +26,7 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
       let _success = FillRect(hdc, &ps.rcPaint, (COLOR_WINDOW + 1) as HBRUSH);
       EndPaint(hWnd, &ps);
     }
-    WM_NCCREATE => {
+    self::WM_NCCREATE => {
       println!("NC Create");
       let createstruct: *mut CREATESTRUCTW = lParam as *mut _;
       if createstruct.is_null() {
@@ -36,7 +36,7 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
       SetWindowLongPtrW(hWnd, GWLP_USERDATA, boxed_i32_ptr as LONG_PTR);
       return 1;
     }
-    WM_CREATE => println!("Create"),
+    self::WM_CREATE => println!("Create"),
     _ => return DefWindowProcW(hWnd, Msg, wParam, lParam),
   }
   0
