@@ -1,2 +1,2 @@
 # RustTriangleFromScratch
-Based on https://rust-tutorials.github.io/triangle-from-scratch/introduction.html with alterations
+Based on https://rust-tutorials.github.io/triangle-from-scratch/ with alterations
