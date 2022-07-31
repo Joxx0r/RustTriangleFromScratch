@@ -146,6 +146,45 @@ pub enum IDCursor {
   Wait = 32514,
 }
 
+/// See [`GetSysColor`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor)
+pub enum SysColor 
+{
+  _3dDarkShadow = 21,
+  _3dLight = 22,
+  ActiveBorder = 10,
+  ActiveCaption = 2,
+  AppWorkspace = 12,
+  /// Button face, also "3D face" color.
+  ButtonFace = 15,
+  /// Button highlight, also "3D highlight" color.
+  ButtonHighlight = 20,
+  /// Button shadow, also "3D shadow" color.
+  ButtonShadow = 16,
+  ButtonText = 18,
+  CaptionText = 9,
+  /// Desktop background color
+  Desktop = 1,
+  GradientActiveCaption = 27,
+  GradientInactiveCaption = 28,
+  GrayText = 17,
+  Highlight = 13,
+  HighlightText = 14,
+  HotLight = 26,
+  InactiveBorder = 11,
+  InactiveCaption = 3,
+  InactiveCaptionText = 19,
+  InfoBackground = 24,
+  InfoText = 23,
+  Menu = 4,
+  MenuHighlight = 29,
+  MenuBar = 30,
+  MenuText = 7,
+  ScrollBar = 0,
+  Window = 5,
+  WindowFrame = 6,
+  WindowText = 8,
+}
+
 pub fn load_predefined_cursor(cursor:IDCursor) -> Result<HCURSOR, Win32Error> {
   let hcursor =
     unsafe { LoadCursorW(null_mut(), MAKEINTRESOURCEW(cursor as WORD)) };
@@ -413,6 +452,11 @@ pub fn post_quit_message() {
   unsafe { PostQuitMessage(0) }
 }
 
+/// See [`EndPaint`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-endpaint)
+pub unsafe fn end_paint(hwnd: HWND, ps: &PAINTSTRUCT) {
+  EndPaint(hwnd, ps);
+}
+
 
 pub fn begin_paint(hWnd: HWND) -> Result<(HDC, PAINTSTRUCT), Win32Error> {
   let mut ps = PAINTSTRUCT::default();
@@ -468,6 +512,24 @@ pub unsafe fn get_window_userdata<T>(hwnd: HWND) -> Result<*mut T, Win32Error> {
     }
   } else {
     Ok(out as *mut T)
+  }
+}
+
+/// Fills a rectangle with the given system color.
+///
+/// When filling the specified rectangle, this does **not** include the
+/// rectangle's right and bottom sides. GDI fills a rectangle up to, but not
+/// including, the right column and bottom row, regardless of the current
+/// mapping mode.
+///
+/// [`FillRect`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-fillrect)
+pub unsafe fn fill_rect_with_sys_color(
+  hdc: HDC, rect: &RECT, color: SysColor,
+) -> Result<(), ()> {
+  if FillRect(hdc, rect, (color as u32 + 1) as HBRUSH) != 0 {
+    Ok(())
+  } else {
+    Err(())
   }
 }
 

@@ -44,8 +44,8 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
         Ok(result) => result,
         Err(error) => panic!("Failed begining paint {}", error),
       };
-      let _success = FillRect(paint_result.0, &paint_result.1.rcPaint, (COLOR_WINDOW + 1) as HBRUSH);
-      EndPaint(hWnd, &paint_result.1);
+      let _success = fill_rect_with_sys_color(paint_result.0, &paint_result.1.rcPaint, SysColor::Window);
+      end_paint(hWnd, &paint_result.1);
     }
     self::WM_NCCREATE => {
       println!("NC Create");
