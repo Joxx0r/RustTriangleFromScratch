@@ -1,7 +1,7 @@
 // at the top of the file
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::os::raw::{c_ulong, c_ushort};
+use std::os::raw::{c_ushort};
 use core::ptr::{null, null_mut};
 
 pub type c_int = i32;
@@ -41,6 +41,7 @@ pub type LPCVOID = *const core::ffi::c_void;
 pub type va_list = *mut c_char;
 pub type c_char = i8;
 pub type HLOCAL = HANDLE;
+pub type c_ulong = u32;
 
 pub const FORMAT_MESSAGE_ALLOCATE_BUFFER:u32=   0x00000100; 
 pub const FORMAT_MESSAGE_IGNORE_INSERTS:u32 =   0x00000200;
@@ -106,7 +107,7 @@ pub const WS_OVERLAPPEDWINDOW:u32 =
 
 pub const CW_USEDEFAULT:c_int   = 0x8000000 as c_int;
 pub const SW_SHOW: c_int = 5;
-
+pub const WM_DESTROY: u32 = 0x0002;
 pub const WM_CLOSE: u32 = 0x0010;
 pub const WM_SETCURSOR: u32 = 0x0020;
 pub const WM_PAINT: u32 = 0x000F;
@@ -375,5 +376,37 @@ pub const IDC_ARROW: LPCWSTR = MAKEINTRESOURCEW(32512);
 /// See [`GetModuleHandleW`](https://docs.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandlew)
 pub fn get_process_handle() -> HMODULE {
   // Safety: as per the MSDN docs.
-  unsafe { GetModuleHandleW(null()) }
+  unsafe { GetModuleHandleW(core::ptr::null()) }
+}
+
+pub fn create_window_ex_w( class_name: &str, window_name: &str, 
+  position: Option<[i32;2]>, window_size:[i32;2],  create_param: LPVOID,
+) -> Result<HWND, Win32Error> {
+  
+  let h_instance = get_process_handle();
+  let window_class_name = wide_null(class_name);
+  let window_name = wide_null(window_name);
+  let hwnd = unsafe
+  {
+    CreateWindowExW(
+      0,
+      window_class_name.as_ptr(),
+      window_name.as_ptr(),
+      WS_OVERLAPPEDWINDOW,
+      position.unwrap_or([CW_USEDEFAULT, CW_USEDEFAULT])[0],
+      position.unwrap_or([CW_USEDEFAULT, CW_USEDEFAULT])[1],
+      window_size[0],
+      window_size[1],
+      null_mut(),
+      null_mut(),
+      h_instance,
+      create_param,
+    )
+  };
+ 
+  if hwnd.is_null() {
+    Err(Win32Error(get_last_error()))
+  } else {
+    Ok(hwnd)
+  }
 }

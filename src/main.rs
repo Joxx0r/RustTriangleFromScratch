@@ -45,10 +45,8 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
 
 
 fn main() {
-    let hInstance = get_process_handle();
     let window_class_name = wide_null("Some Window Class");
-    let window_name = wide_null("Some Window Name");
-
+    let hInstance = get_process_handle();
     let mut wc:WNDCLASSW = WNDCLASSW::default();
     wc.lpfnWndProc = Some(window_procedure);
     wc.hInstance = hInstance;
@@ -59,28 +57,22 @@ fn main() {
     }) ;
   
     let lparam: *mut i32 = Box::leak(Box::new(5_i32));
+    let hwnd_result = create_window_ex_w( 
+      "Some Window Class", 
+    "Some Window Name",
+  Some([WINDOW_START_POS_X as i32, WINDOW_START_POS_Y as i32]),
+  [WINDOW_WIDTH as i32, WINDOW_HEIGHT as i32],
+  lparam.cast());
 
-    let hwnd = unsafe {
-        CreateWindowExW(
-          0, 
-          window_class_name.as_ptr(), 
-          window_name.as_ptr(), 
-          WS_OVERLAPPEDWINDOW,
-          WINDOW_START_POS_X as i32,
-          WINDOW_START_POS_Y as i32,
-          WINDOW_WIDTH as i32,
-          WINDOW_HEIGHT as i32,
-          null_mut(),
-          null_mut(),
-          hInstance,
-          lparam.cast())
+    let hwnd = match hwnd_result {
+      Ok(hwnd) => hwnd,
+      Err(error) => panic!("Failed creating file {}", error),
     };
-
     if hwnd.is_null() {
       let error = Win32Error(get_last_error());
       panic!("failed creating window {}", error);
     }
-
+  
     let _previously_visible = unsafe { ShowWindow(hwnd, SW_SHOW) };
 
     let mut msg = MSG::default();
