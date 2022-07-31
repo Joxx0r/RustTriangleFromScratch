@@ -110,6 +110,7 @@ pub const SW_SHOW: c_int = 5;
 pub const WM_DESTROY: u32 = 0x0002;
 pub const WM_CLOSE: u32 = 0x0010;
 pub const WM_SETCURSOR: u32 = 0x0020;
+pub const WM_QUIT: u32 = 0x0012;
 pub const WM_PAINT: u32 = 0x000F;
 pub const COLOR_WINDOW: u32 = 5;
 
@@ -334,6 +335,7 @@ extern "system" {
   pub fn GetLastError() -> DWORD;
   pub fn FormatMessageW(dwFlags: DWORD, lpSource: LPCVOID, dwMessageId: DWORD, dwLanguageId: DWORD,lpBuffer: LPWSTR, nSize: DWORD, Arguments: va_list, ) -> DWORD;
   pub fn LocalFree(hMem: HLOCAL) -> HLOCAL;
+   pub fn SetLastError(dwErrCode: DWORD);
 }
 
 #[link(name = "User32")]
@@ -379,6 +381,103 @@ pub fn get_process_handle() -> HMODULE {
   unsafe { GetModuleHandleW(core::ptr::null()) }
 }
 
+
+/// Translates virtual-key messages into character messages.
+///
+/// The character messages go into your thread's message queue,
+/// and you'll see them if you continue to consume messages.
+///
+/// **Returns:**
+/// * `true` if the message was `WM_KEYDOWN`, `WM_KEYUP`, `WM_SYSKEYDOWN`, or
+///   `WM_SYSKEYUP`.
+/// * `true` for any other message type that generated a character message.
+/// * otherwise `false`
+///
+/// See [`TranslateMessage`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-translatemessage)
+pub fn translate_message(msg: &MSG) -> bool {
+  0 != unsafe { TranslateMessage(msg) }
+}
+
+#[inline(always)]
+pub fn get_any_message() -> Result<MSG, Win32Error> {
+  let mut msg = MSG::default();
+  let output = unsafe { GetMessageW(&mut msg, null_mut(), 0, 0) };
+  if output == -1 {
+    Err(Win32Error(get_last_error()))
+  } else {
+    Ok(msg)
+  }
+}
+
+pub fn post_quit_message() {
+  unsafe { PostQuitMessage(0) }
+}
+
+
+pub fn begin_paint(hWnd: HWND) -> Result<(HDC, PAINTSTRUCT), Win32Error> {
+  let mut ps = PAINTSTRUCT::default();
+  let result =  unsafe { BeginPaint(hWnd, &mut ps) };
+  if result.is_null() {
+    Err(Win32Error(get_last_error()))
+  } else {
+    Ok((result, ps))
+  }
+}
+
+
+
+/// Sets the "userdata" pointer of the window (`GWLP_USERDATA`).
+///
+/// **Returns:** The previous userdata pointer.
+///
+/// [`SetWindowLongPtrW`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowlongptrw)
+pub unsafe fn set_window_userdata<T>(
+  hwnd: HWND, ptr: *mut T,
+) -> Result<*mut T, Win32Error> {
+  set_last_error(Win32Error(0));
+  let out = SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as LONG_PTR);
+  if out == 0 {
+    // if output is 0, it's only a "real" error if the last_error is non-zero
+    let last_error = get_last_error();
+    if last_error != 0 {
+      Err(Win32Error(last_error))
+    } else {
+      Ok(out as *mut T)
+    }
+  } else {
+    Ok(out as *mut T)
+  }
+}
+
+
+/// Gets the "userdata" pointer of the window (`GWLP_USERDATA`).
+///
+/// **Returns:** The userdata pointer.
+///
+/// [`GetWindowLongPtrW`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowlongptrw)
+pub unsafe fn get_window_userdata<T>(hwnd: HWND) -> Result<*mut T, Win32Error> {
+  set_last_error(Win32Error(0));
+  let out = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+  if out == 0 {
+    // if output is 0, it's only a "real" error if the last_error is non-zero
+    let last_error = get_last_error();
+    if last_error != 0 {
+      Err(Win32Error(last_error))
+    } else {
+      Ok(out as *mut T)
+    }
+  } else {
+    Ok(out as *mut T)
+  }
+}
+
+/// Sets the thread-local last-error code value.
+///
+/// See [`SetLastError`](https://docs.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-setlasterror)
+pub fn set_last_error(e: Win32Error) {
+  unsafe { SetLastError(e.0) }
+}
+
 pub fn create_window_ex_w( class_name: &str, window_name: &str, 
   position: Option<[i32;2]>, window_size:[i32;2],  create_param: LPVOID,
 ) -> Result<HWND, Win32Error> {
@@ -410,3 +509,4 @@ pub fn create_window_ex_w( class_name: &str, window_name: &str,
     Ok(hwnd)
   }
 }
+
