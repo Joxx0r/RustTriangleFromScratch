@@ -92,7 +92,7 @@ fn main() {
     match get_any_message() {
       Ok(msg) => {
         if msg.message == WM_QUIT {
-          break;
+          std::process::exit(msg.wParam as i32);
         }
         translate_message(&msg);
         unsafe
