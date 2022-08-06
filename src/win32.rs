@@ -572,3 +572,13 @@ pub fn create_window_ex_w( class_name: &str, window_name: &str,
   }
 }
 
+/// Performs [`begin_paint`] / [`end_paint`] around your closure.
+pub unsafe fn do_some_painting<F, T>(hwnd: HWND, f: F) -> Result<T, Win32Error>
+where
+  F: FnOnce(HDC, bool, &RECT) -> Result<T, Win32Error>,
+{
+  let (hdc, ps) = begin_paint(hwnd)?;
+  let output = f(hdc, ps.fErase != 0, &ps.rcPaint);
+  end_paint(hwnd, &ps);
+  output
+}

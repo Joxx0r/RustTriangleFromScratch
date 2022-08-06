@@ -8,11 +8,11 @@ use core::ptr::{null, null_mut};
 pub mod win32;
 use RustTriangleFromScratch::win32::*;
 
-pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+pub unsafe extern "system" fn window_procedure( hwnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
   match Msg {
-    self::WM_CLOSE =>  drop(DestroyWindow(hWnd)),
+    self::WM_CLOSE =>  drop(DestroyWindow(hwnd)),
     self::WM_DESTROY => {
-      match get_window_userdata::<i32>(hWnd) {
+      match get_window_userdata::<i32>(hwnd) {
         Ok(ptr) if !ptr.is_null() => {
           Box::from_raw(ptr);
           println!("Cleaned up the box.");
@@ -27,8 +27,9 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
       post_quit_message();
     }
     self::WM_PAINT => {
-      match get_window_userdata::<i32>(hWnd) {
+      match get_window_userdata::<i32>(hwnd) {
         Ok(ptr) if !ptr.is_null() => {
+          let ptr = ptr as *mut i32;
           println!("Current ptr: {}", *ptr);
           *ptr += 1;
         }
@@ -39,13 +40,11 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
           println!("Error while getting the userdata ptr: {}", e)
         }
       }
-      let paint_result = match begin_paint(hWnd) 
-      {
-        Ok(result) => result,
-        Err(error) => panic!("Failed begining paint {}", error),
-      };
-      let _success = fill_rect_with_sys_color(paint_result.0, &paint_result.1.rcPaint, SysColor::Window);
-      end_paint(hWnd, &paint_result.1);
+      do_some_painting(hwnd, |hdc, _erase_bg, target_rect| {
+        let _ = fill_rect_with_sys_color(hdc, &target_rect, SysColor::Window);
+        Ok(())
+      })
+      .unwrap_or_else(|e| println!("error during painting: {}", e));
     }
     self::WM_NCCREATE => {
       println!("NC Create");
@@ -54,10 +53,10 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
         return 0;
       }
       let ptr = (*createstruct).lpCreateParams as *mut i32;
-      return set_window_userdata::<i32>(hWnd, ptr).is_ok() as LRESULT;
+      return set_window_userdata::<i32>(hwnd, ptr).is_ok() as LRESULT;
     }
     self::WM_CREATE => println!("Create"),
-    _ => return DefWindowProcW(hWnd, Msg, wParam, lParam),
+    _ => return DefWindowProcW(hwnd, Msg, wParam, lParam),
   }
   0
 }
@@ -65,7 +64,8 @@ pub unsafe extern "system" fn window_procedure( hWnd: HWND, Msg: UINT, wParam: W
 
 
 fn main() {
-    let window_class_name = wide_null("Some Window Class");
+    let base_class_name = "Some Window Class";
+    let window_class_name = wide_null(base_class_name);
     let hInstance = get_process_handle();
     let mut wc:WNDCLASSW = WNDCLASSW::default();
     wc.lpfnWndProc = Some(window_procedure);
@@ -78,9 +78,7 @@ fn main() {
   
     let lparam: *mut i32 = Box::leak(Box::new(5_i32));
     let hwnd = 
-    match create_window_ex_w( 
-      "Some Window Class", 
-    "Some Window Name",
+    match create_window_ex_w( base_class_name,  "Some Window Name",
   Some([WINDOW_START_POS_X as i32, WINDOW_START_POS_Y as i32]),
   [WINDOW_WIDTH as i32, WINDOW_HEIGHT as i32],
   lparam.cast()) 
