@@ -87,7 +87,52 @@ fn main() {
       iLayerType: PFD_MAIN_PLANE,
       ..Default::default()
     };
-  
+    {
+      // fake window stuff
+      let fake_window_class = "Fake Window Class";
+      let fake_window_class_wn = wide_null(fake_window_class);
+
+      let mut fake_wc = WNDCLASSW::default();
+      fake_wc.style = CS_OWNDC;
+      fake_wc.lpfnWndProc = Some(DefWindowProcW);
+      fake_wc.hInstance = get_process_handle();
+      fake_wc.lpszClassName = fake_window_class_wn.as_ptr();
+
+      let _atom = unsafe { register_class(&fake_wc) }.unwrap();
+
+      let pfd = PIXELFORMATDESCRIPTOR {
+        dwFlags: PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+        iPixelType: PFD_TYPE_RGBA,
+        cColorBits: 32,
+        cDepthBits: 24,
+        cStencilBits: 8,
+        iLayerType: PFD_MAIN_PLANE,
+        ..Default::default()
+      };
+      let fake_hwnd = unsafe {
+        create_window_ex_w(
+          fake_window_class,
+          "Fake Window",
+          None,
+          [1, 1],
+          null_mut(),
+        )
+      }
+      .unwrap();
+
+      let fake_hdc = unsafe { get_dc(fake_hwnd) }.unwrap();
+      let pf_index = unsafe { choose_pixel_format(fake_hdc, &pfd) }.unwrap();
+      if let Ok(pfd) = unsafe { describe_pixel_format(fake_hdc, pf_index) } {
+        println!("{:?}", pfd);
+      } else {
+        println!("Error: Couldn't get pixel format description.");
+      }
+      unsafe { set_pixel_format(fake_hdc, pf_index, &pfd) }.unwrap();
+      assert!(unsafe { release_dc(fake_hwnd, fake_hdc) });
+      unsafe { destroy_window(fake_hwnd) }.unwrap();
+      unsafe {unregister_class_by_name(fake_window_class, hInstance)};
+    }
+    
     let lparam: *mut i32 = Box::leak(Box::new(5_i32));
     let hwnd = 
     match create_window_ex_w( base_class_name,  "Some Window Name",

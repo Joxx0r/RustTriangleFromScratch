@@ -3,6 +3,7 @@
 
 use std::os::raw::{c_ushort};
 use core::ptr::{null, null_mut};
+use core::mem::{size_of};
 
 pub type c_int = i32;
 pub type c_uint = u32;
@@ -77,6 +78,10 @@ pub const WS_SYSMENU:u32 =            0x00080000;
 pub const WS_THICKFRAME:u32 =         0x00040000;
 pub const WS_GROUP:u32 =              0x00020000;
 pub const WS_TABSTOP:u32 =            0x00010000;
+pub const WS_EX_APPWINDOW:u32 =       0x00040000;
+pub const WS_EX_WINDOWEDGE:u32 =      0x00000100;
+pub const WS_EX_CLIENTEDGE:u32 =      0x00000200;
+pub const WS_EX_OVERLAPPEDWINDOW:u32 = (WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE);
 
 pub const WS_MINIMIZEBOX:u32 =        0x00020000;
 pub const WS_MAXIMIZEBOX:u32 =        0x00010000;
@@ -190,6 +195,7 @@ pub const PFD_DOUBLEBUFFER_DONTCARE: u32 = 0x40000000;
 pub const PFD_STEREO_DONTCARE: u32 = 0x80000000;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct PIXELFORMATDESCRIPTOR {
   pub nSize: WORD,
   pub nVersion: WORD,
@@ -389,13 +395,12 @@ pub struct CREATESTRUCTW {
 }
 unsafe_impl_default_zeroed!(CREATESTRUCTW);
 
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct Win32Error(pub DWORD);
 
 impl std::error::Error for Win32Error {}
 
-impl core::fmt::Display for Win32Error {
+impl core::fmt::Debug for Win32Error {
   fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
     if self.0 & (1 << 29) > 0 {
       return write!(f, "Win32ApplicationError({})", self.0);
@@ -442,6 +447,13 @@ impl core::fmt::Display for Win32Error {
   }
 }
 
+impl core::fmt::Display for Win32Error {
+  /// Same as `Debug` impl
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    write!(f, "{:?}", self)
+  }
+}
+
 
 #[repr(transparent)]
 struct OnDropLocalFree(HLOCAL);
@@ -485,14 +497,17 @@ extern "system" {
     pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR,) -> LONG_PTR;
 
     pub fn SetCursor(hCursor: HCURSOR) -> HCURSOR;
+
+    pub fn GetDC(hWnd: HWND) -> HDC;
+    pub fn ReleaseDC(hWnd: HWND, hDC: HDC) -> c_int;
+    pub fn UnregisterClassW(lpClassName: LPCWSTR, hInstance: HINSTANCE) -> BOOL;
 }
 
 #[link(name = "Gdi32")]
 extern "system" {
-  /// [`ChoosePixelFormat`](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-choosepixelformat)
-  pub fn ChoosePixelFormat(
-    hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR,
-  ) -> c_int;
+  pub fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR,) -> c_int;
+  pub fn SetPixelFormat(hdc: HDC, format: c_int, ppfd: *const PIXELFORMATDESCRIPTOR,) -> BOOL;
+  pub fn DescribePixelFormat(hdc:HDC, iPixelFormat:c_int, nBytes:UINT,ppfd:*const PIXELFORMATDESCRIPTOR,) -> c_int;
 }
 
 pub fn wide_null(string:&str ) -> Vec<u16> {
@@ -642,10 +657,10 @@ pub fn create_window_ex_w( class_name: &str, window_name: &str,
   let hwnd = unsafe
   {
     CreateWindowExW(
-      0,
+      WS_EX_APPWINDOW | WS_EX_OVERLAPPEDWINDOW,
       window_class_name.as_ptr(),
       window_name.as_ptr(),
-      WS_OVERLAPPEDWINDOW,
+      WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
       position.unwrap_or([CW_USEDEFAULT, CW_USEDEFAULT])[0],
       position.unwrap_or([CW_USEDEFAULT, CW_USEDEFAULT])[1],
       window_size[0],
@@ -673,4 +688,154 @@ where
   let output = f(hdc, ps.fErase != 0, &ps.rcPaint);
   end_paint(hwnd, &ps);
   output
+}
+
+/// See [`ChoosePixelFormat`](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-choosepixelformat)
+pub unsafe fn choose_pixel_format(
+  hdc: HDC, ppfd: &PIXELFORMATDESCRIPTOR,
+) -> Result<c_int, Win32Error> {
+  let index = ChoosePixelFormat(hdc, ppfd);
+  if index != 0 {
+    Ok(index)
+  } else {
+    Err(Win32Error(get_last_error()))
+  }
+}
+
+pub unsafe fn get_dc(hwnd: HWND) -> Option<HDC> {
+  let hdc = GetDC(hwnd);
+  if hdc.is_null() {
+    None
+  } else {
+    Some(hdc)
+  }
+}
+
+#[must_use]
+pub unsafe fn release_dc(hwnd: HWND, hdc: HDC) -> bool {
+  let was_released = ReleaseDC(hwnd, hdc);
+  was_released != 0
+}
+
+pub unsafe fn destroy_window(hwnd: HWND) -> Result<(), Win32Error> {
+  let destroyed = DestroyWindow(hwnd);
+  if destroyed != 0 {
+    Ok(())
+  } else {
+    Err(Win32Error(get_last_error()))
+  }
+}
+
+/// Sets the pixel format of an HDC.
+///
+/// * If it's a window's HDC then it sets the pixel format of the window.
+/// * You can't set a window's pixel format more than once.
+/// * Call this *before* creating an OpenGL context.
+/// * OpenGL windows should use [`WS_CLIPCHILDREN`] and [`WS_CLIPSIBLINGS`]
+/// * OpenGL windows should *not* use `CS_PARENTDC`
+///
+/// See [`SetPixelFormat`](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-setpixelformat)
+pub unsafe fn set_pixel_format(
+  hdc: HDC, format: c_int, ppfd: &PIXELFORMATDESCRIPTOR,
+) -> Result<(), Win32Error> {
+  let success = SetPixelFormat(hdc, format, ppfd);
+  if success != 0 {
+    Ok(())
+  } else {
+    Err(Win32Error(get_last_error()))
+  }
+}
+
+
+/// Gets the maximum pixel format index for the HDC.
+///
+/// Pixel format indexes are 1-based.
+///
+/// To print out info on all the pixel formats you'd do something like this:
+/// ```no_run
+/// # use triangle_from_scratch::win32::*;
+/// let hdc = todo!("create a window to get an HDC");
+/// let max = unsafe { get_max_pixel_format_index(hdc).unwrap() };
+/// for index in 1..=max {
+///   let pfd = unsafe { describe_pixel_format(hdc, index).unwrap() };
+///   todo!("print the pfd info you want to know");
+/// }
+/// ```
+///
+/// See [`DescribePixelFormat`](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-describepixelformat)
+pub unsafe fn get_max_pixel_format_index(
+  hdc: HDC,
+) -> Result<c_int, Win32Error> {
+  let max_index = DescribePixelFormat(
+    hdc,
+    1,
+    size_of::<PIXELFORMATDESCRIPTOR>() as _,
+    null_mut(),
+  );
+  if max_index == 0 {
+    Err(Win32Error(get_last_error()))
+  } else {
+    Ok(max_index)
+  }
+}
+
+/// Gets the pixel format info for a given pixel format index.
+///
+/// See [`DescribePixelFormat`](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-describepixelformat)
+pub unsafe fn describe_pixel_format(
+  hdc: HDC, format: c_int,
+) -> Result<PIXELFORMATDESCRIPTOR, Win32Error> {
+  let mut pfd = PIXELFORMATDESCRIPTOR::default();
+  let max_index = DescribePixelFormat(
+    hdc,
+    format,
+    size_of::<PIXELFORMATDESCRIPTOR>() as _,
+    &mut pfd,
+  );
+  if max_index == 0 {
+    Err(Win32Error(get_last_error()))
+  } else {
+    Ok(pfd)
+  }
+}
+
+/// Un-registers the window class from the `HINSTANCE` given.
+///
+/// * The name must be the name of a registered window class.
+/// * This requires re-encoding the name to null-terminated utf-16, which
+///   allocates. Using [`unregister_class_by_atom`] instead does not allocate,
+///   if you have the atom available.
+/// * Before calling this function, an application must destroy all windows
+///   created with the specified class.
+///
+/// See
+/// [`UnregisterClassW`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-unregisterclassw)
+pub unsafe fn unregister_class_by_name(
+  name: &str, instance: HINSTANCE,
+) -> Result<(), Win32Error> {
+  let name_null = wide_null(name);
+  let out = UnregisterClassW(name_null.as_ptr(), instance);
+  if out != 0 {
+    Ok(())
+  } else {
+    Err(Win32Error(get_last_error()))
+  }
+}
+
+/// Un-registers the window class from the `HINSTANCE` given.
+///
+/// * The atom must be the atom of a registered window class.
+/// * Before calling this function, an application must destroy all windows
+///   created with the specified class.
+///
+/// See [`UnregisterClassW`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-unregisterclassw)
+pub unsafe fn unregister_class_by_atom(
+  a: ATOM, instance: HINSTANCE,
+) -> Result<(), Win32Error> {
+  let out = UnregisterClassW(a as LPCWSTR, instance);
+  if out != 0 {
+    Ok(())
+  } else {
+    Err(Win32Error(get_last_error()))
+  }
 }
