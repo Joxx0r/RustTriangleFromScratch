@@ -56,11 +56,6 @@ pub const WINDOW_WIDTH:f32  = 1024.0;
 pub const WINDOW_START_POS_X:f32  = 0.0;
 pub const WINDOW_START_POS_Y:f32  = 0.0;
 pub const GWLP_USERDATA: c_int = -21;
-
-/*
- * Window Styles
- */
-
 /*
  * Window Styles
  */
@@ -144,6 +139,95 @@ pub enum IDCursor {
   UpArrow = 32516,
   /// Hourglass
   Wait = 32514,
+}
+
+
+/// Allocates a unique device context for each window in the class.
+pub const CS_OWNDC: u32 = 0x0020;
+
+/// Redraws the entire window if a movement or size adjustment changes the width
+/// of the client area.
+pub const CS_HREDRAW: u32 = 0x0002;
+
+/// Redraws the entire window if a movement or size adjustment changes the
+/// height of the client area.
+pub const CS_VREDRAW: u32 = 0x0001;
+
+/// [`PIXELFORMATDESCRIPTOR`] pixel type
+pub const PFD_TYPE_RGBA: u8 = 0;
+/// [`PIXELFORMATDESCRIPTOR`] pixel type
+pub const PFD_TYPE_COLORINDEX: u8 = 1;
+
+/// [`PIXELFORMATDESCRIPTOR`] layer type
+pub const PFD_MAIN_PLANE: u8 = 0;
+/// [`PIXELFORMATDESCRIPTOR`] layer type
+pub const PFD_OVERLAY_PLANE: u8 = 1;
+/// [`PIXELFORMATDESCRIPTOR`] layer type
+pub const PFD_UNDERLAY_PLANE: u8 = u8::MAX /* was (-1) */;
+
+pub const PFD_DOUBLEBUFFER: u32 = 0x00000001;
+pub const PFD_STEREO: u32 = 0x00000002;
+pub const PFD_DRAW_TO_WINDOW: u32 = 0x00000004;
+pub const PFD_DRAW_TO_BITMAP: u32 = 0x00000008;
+pub const PFD_SUPPORT_GDI: u32 = 0x00000010;
+pub const PFD_SUPPORT_OPENGL: u32 = 0x00000020;
+pub const PFD_GENERIC_FORMAT: u32 = 0x00000040;
+pub const PFD_NEED_PALETTE: u32 = 0x00000080;
+pub const PFD_NEED_SYSTEM_PALETTE: u32 = 0x00000100;
+pub const PFD_SWAP_EXCHANGE: u32 = 0x00000200;
+pub const PFD_SWAP_COPY: u32 = 0x00000400;
+pub const PFD_SWAP_LAYER_BUFFERS: u32 = 0x00000800;
+pub const PFD_GENERIC_ACCELERATED: u32 = 0x00001000;
+pub const PFD_SUPPORT_DIRECTDRAW: u32 = 0x00002000;
+pub const PFD_DIRECT3D_ACCELERATED: u32 = 0x00004000;
+pub const PFD_SUPPORT_COMPOSITION: u32 = 0x00008000;
+
+/// use with [`ChoosePixelFormat`] only
+pub const PFD_DEPTH_DONTCARE: u32 = 0x20000000;
+/// use with [`ChoosePixelFormat`] only
+pub const PFD_DOUBLEBUFFER_DONTCARE: u32 = 0x40000000;
+/// use with [`ChoosePixelFormat`] only
+pub const PFD_STEREO_DONTCARE: u32 = 0x80000000;
+
+#[repr(C)]
+pub struct PIXELFORMATDESCRIPTOR {
+  pub nSize: WORD,
+  pub nVersion: WORD,
+  pub dwFlags: DWORD,
+  pub iPixelType: BYTE,
+  pub cColorBits: BYTE,
+  pub cRedBits: BYTE,
+  pub cRedShift: BYTE,
+  pub cGreenBits: BYTE,
+  pub cGreenShift: BYTE,
+  pub cBlueBits: BYTE,
+  pub cBlueShift: BYTE,
+  pub cAlphaBits: BYTE,
+  pub cAlphaShift: BYTE,
+  pub cAccumBits: BYTE,
+  pub cAccumRedBits: BYTE,
+  pub cAccumGreenBits: BYTE,
+  pub cAccumBlueBits: BYTE,
+  pub cAccumAlphaBits: BYTE,
+  pub cDepthBits: BYTE,
+  pub cStencilBits: BYTE,
+  pub cAuxBuffers: BYTE,
+  pub iLayerType: BYTE,
+  pub bReserved: BYTE,
+  pub dwLayerMask: DWORD,
+  pub dwVisibleMask: DWORD,
+  pub dwDamageMask: DWORD,
+}
+
+impl Default for PIXELFORMATDESCRIPTOR {
+  #[inline]
+  #[must_use]
+  fn default() -> Self {
+    let mut out: Self = unsafe { core::mem::zeroed() };
+    out.nSize = core::mem::size_of::<Self>() as WORD;
+    out.nVersion = 1;
+    out
+  }
 }
 
 /// See [`GetSysColor`](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor)
@@ -401,6 +485,14 @@ extern "system" {
     pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR,) -> LONG_PTR;
 
     pub fn SetCursor(hCursor: HCURSOR) -> HCURSOR;
+}
+
+#[link(name = "Gdi32")]
+extern "system" {
+  /// [`ChoosePixelFormat`](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-choosepixelformat)
+  pub fn ChoosePixelFormat(
+    hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR,
+  ) -> c_int;
 }
 
 pub fn wide_null(string:&str ) -> Vec<u16> {

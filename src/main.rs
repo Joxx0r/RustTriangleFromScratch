@@ -72,9 +72,21 @@ fn main() {
     wc.hInstance = hInstance;
     wc.lpszClassName = window_class_name.as_ptr();
     wc.hCursor = load_predefined_cursor(IDCursor::Arrow).unwrap();
+    wc.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
     let return_result:ATOM= register_class(&wc).unwrap_or_else(|e| {
       panic!("Error when registering class {}", e);
     }) ;
+    
+    // after we register the class in fn main
+    let pfd = PIXELFORMATDESCRIPTOR {
+      dwFlags: PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+      iPixelType: PFD_TYPE_RGBA,
+      cColorBits: 32,
+      cDepthBits: 24,
+      cStencilBits: 8,
+      iLayerType: PFD_MAIN_PLANE,
+      ..Default::default()
+    };
   
     let lparam: *mut i32 = Box::leak(Box::new(5_i32));
     let hwnd = 
